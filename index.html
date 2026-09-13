@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>통합 투자 대시보드</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+        }
+    </script>
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body id="body-theme" class="bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-gray-100 p-6 transition-colors duration-200">
+
+<div class="max-w-7xl mx-auto space-y-6">
+    <!-- 헤더 -->
+    <header class="bg-indigo-700 dark:bg-indigo-900 text-white p-6 rounded-2xl shadow-md flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 transition-colors">
+        <div>
+            <div class="flex items-center gap-3 flex-wrap">
+                <h1 class="text-2xl font-bold">📈 통합 투자 대시보드</h1>
+                <div class="flex items-center gap-2">
+                    <button onclick="openBtcSyntheticModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg border border-indigo-500 shadow-sm transition">
+                        🚀 BTC 차트 분석
+                    </button>
+                    <button onclick="openInterestModal()" class="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg border border-amber-500 shadow-sm transition">
+                        ⭐ 관심종목 관리
+                    </button>
+                    <span id="sheet-sync-status" class="text-[11px] bg-indigo-900/80 border border-indigo-400/50 px-2.5 py-1 rounded-full text-green-300 font-mono">
+                        🟢 시트 연동 준비
+                    </span>
+                </div>
+            </div>
+            <p class="mt-1 text-indigo-100 text-sm">실시간 시세 기준 • <span id="last-update" class="text-white font-mono text-xs">업데이트 대기중...</span></p>
+        </div>
+        <div class="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-end flex-wrap">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs bg-indigo-800 dark:bg-indigo-950 p-3 rounded-xl border border-indigo-600">
+                <div class="bg-indigo-900/60 p-2 rounded text-center">
+                    <div class="text-indigo-300">환율(USDT)</div>
+                    <div id="top-rate" class="font-bold text-sm mt-0.5">-</div>
+                </div>
+                <div class="bg-indigo-900/60 p-2 rounded text-center">
+                    <div class="text-indigo-300">업비트 BTC (<span id="btc-rate-header">0.00%</span>)</div>
+                    <div id="top-upbit" class="font-bold text-sm mt-0.5">-</div>
+                </div>
+                <div class="bg-indigo-900/60 p-2 rounded text-center">
+                    <div class="text-indigo-300">바이낸스 BTC</div>
+                    <div id="top-binance" class="font-bold text-sm mt-0.5">-</div>
+                </div>
+                <div class="bg-indigo-900/60 p-2 rounded text-center">
+                    <div class="text-indigo-300">김치 프리미엄</div>
+                    <div id="top-kimchi" class="font-bold text-sm mt-0.5">-</div>
+                </div>
+            </div>
+            <!-- 테마 변경 버튼 -->
+            <button onclick="toggleTheme()" id="theme-btn" class="bg-indigo-800 hover:bg-indigo-600 text-white px-3.5 py-3 rounded-xl border border-indigo-600 text-xs font-bold transition shadow-sm">
+                🌙 다크모드
+            </button>
+        </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <!-- 리스트 -->
+        <div class="bg-white dark:bg-gray-900 p-4 rounded-xl shadow h-[800px] flex flex-col transition-colors">
+            <div class="flex justify-between items-center mb-2">
+                <h2 class="font-bold">🔍 종목 (<span id="coin-count">0</span>개)</h2>
+                <div class="space-x-1">
+                    <button onclick="changeSort('name')" class="text-[10px] bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 px-1.5 py-0.5 rounded">가나다</button>
+                    <button onclick="changeSort('rate')" class="text-[10px] bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 px-1.5 py-0.5 rounded">수익률</button>
+                </div>
+            </div>
+            <input type="text" id="search-input" placeholder="코인명 검색" class="w-full p-2 border dark:border-gray-700 rounded-lg mb-2 text-sm bg-transparent">
+            <div id="coin-list" class="overflow-y-auto flex-1 border-t dark:border-gray-800 pt-2 space-y-1 text-sm">목록 로딩 중...</div>
+        </div>
+
+        <!-- 차트 및 통계 -->
+        <div class="lg:col-span-3 space-y-6">
+            <div id="tradingview_chart" class="h-[500px] bg-white dark:bg-gray-900 rounded-xl shadow transition-colors"></div>
+            
+            <!-- 통합 통계 -->
+            <div class="bg-white dark:bg-gray-900 p-4 rounded-xl shadow text-center transition-colors">
+                <div class="text-gray-500 dark:text-gray-400 font-bold mb-2">오늘의 시장 현황</div>
+                <div class="flex justify-center gap-10">
+                    <div>
+                        <div class="text-sm">상승</div>
+                        <div id="up-count" class="text-2xl font-bold text-red-500">0</div>
+                    </div>
+                    <div>
+                        <div class="text-sm">하락</div>
+                        <div id="down-count" class="text-2xl font-bold text-blue-500">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 비트코인보다 더 오른 종목 -->
+            <div class="bg-white dark:bg-gray-900 p-4 rounded-xl shadow transition-colors">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="font-bold">🚀 비트코인(BTC)보다 더 오른 코인</h2>
+                    <div id="outperform-stats" class="text-sm font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/60 px-3 py-1 rounded-full">
+                        BTC <span id="btc-rate-body">0.00%</span> | <span id="outperform-count">0</span>개
+                    </div>
+                </div>
+                <div id="outperform-list" class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- BTC 합성 차트 모달 -->
+<div id="synthetic-modal" class="fixed inset-0 bg-black/80 z-50 hidden flex flex-col">
+    <div class="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 p-4 flex justify-between items-center text-gray-900 dark:text-white transition-colors">
+        <h2 class="font-bold text-lg">🚀 업비트 BTC 합성 차트 분석 (초고속 반응형)</h2>
+        <button onclick="closeBtcSyntheticModal()" class="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-xs font-bold transition">닫기 ✕</button>
+    </div>
+    <div class="flex-1 flex overflow-hidden">
+        <div id="modal-sidebar" class="w-80 border-r border-gray-200 dark:border-gray-800 flex flex-col bg-white dark:bg-gray-900 text-gray-900 dark:text-white transition-colors">
+            <div class="p-3 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center text-sm font-bold text-gray-700 dark:text-gray-300">
+                <span>🔍 종목 (<span id="modal-coin-count">0</span>개)</span>
+            </div>
+            <div class="p-3 border-b border-gray-200 dark:border-gray-800">
+                <input id="modal-search" type="text" placeholder="검색 (코인명 또는 심볼)" oninput="filterModalList()" class="w-full px-3 py-2 rounded bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-white">
+            </div>
+            <div id="modal-coin-list" class="flex-1 overflow-y-auto divide-y divide-gray-200 dark:divide-gray-800 text-sm"></div>
+        </div>
+        <div class="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white transition-colors">
+            <div class="p-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center flex-wrap gap-2">
+                <div id="modal-chart-title" class="text-lg font-bold">코인을 선택하세요</div>
+                <div class="flex items-center gap-1.5 bg-gray-200 dark:bg-gray-950 p-1.5 rounded-lg border border-gray-300 dark:border-gray-800">
+                    <button onclick="changeTimeframe('minutes/1', this)" class="modal-tf-btn px-3 py-1 rounded text-xs font-bold bg-gray-300 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-400 dark:hover:bg-gray-700 transition" data-type="minutes/1">1분봉</button>
+                    <button onclick="changeTimeframe('minutes/5', this)" class="modal-tf-btn px-3 py-1 rounded text-xs font-bold bg-gray-300 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-400 dark:hover:bg-gray-700 transition" data-type="minutes/5">5분봉</button>
+                    <button onclick="changeTimeframe('minutes/30', this)" class="modal-tf-btn px-3 py-1 rounded text-xs font-bold bg-gray-300 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-400 dark:hover:bg-gray-700 transition" data-type="minutes/30">30분봉</button>
+                    <button onclick="changeTimeframe('minutes/60', this)" class="modal-tf-btn px-3 py-1 rounded text-xs font-bold bg-gray-300 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-400 dark:hover:bg-gray-700 transition" data-type="minutes/60">1시간봉</button>
+                    <button onclick="changeTimeframe('days', this)" class="modal-tf-btn px-3 py-1 rounded text-xs font-bold bg-gray-300 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-400 dark:hover:bg-gray-700 transition" data-type="days">일봉</button>
+                    <button onclick="changeTimeframe('weeks', this)" class="modal-tf-btn px-3 py-1 rounded text-xs font-bold bg-gray-300 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-400 dark:hover:bg-gray-700 transition" data-type="weeks">주봉</button>
+                </div>
+            </div>
+            <div class="bg-gray-200/50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-800 p-2 px-4 flex items-center justify-between text-xs">
+                <div id="modal-indicator-list" class="flex items-center gap-3 flex-wrap"></div>
+                <button onclick="addIndicatorRow()" class="bg-green-600 hover:bg-green-700 text-white px-2.5 py-1 rounded transition">+ 지표 추가</button>
+            </div>
+            <div id="modal-chart-container" class="flex-1 w-full relative"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ⭐ 관심종목 관리 모달 -->
+<div id="interest-modal" class="fixed inset-0 bg-black/80 z-50 hidden flex flex-col">
+    <div class="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 p-4 flex justify-between items-center text-gray-900 dark:text-white transition-colors">
+        <div class="flex items-center gap-3">
+            <h2 class="font-bold text-lg">⭐ 알트코인 관심종목 관리 (A5 셀 실시간 연동)</h2>
+            <span id="modal-sync-badge" class="text-xs text-green-400 font-mono">🟢 동기화 완료</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <button onclick="fetchInterestFromSheet()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-2.5 py-1 rounded text-xs font-bold transition">🔄 시트 새로고침</button>
+            <button onclick="closeInterestModal()" class="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-xs font-bold transition">닫기 ✕</button>
+        </div>
+    </div>
+    <div class="flex-1 flex overflow-hidden">
+        <div class="w-80 border-r border-gray-200 dark:border-gray-800 flex flex-col bg-white dark:bg-gray-900 text-gray-900 dark:text-white transition-colors">
+            <div class="p-3 border-b border-gray-200 dark:border-gray-800 text-sm font-bold text-gray-700 dark:text-gray-300">
+                <span>🔍 전체 코인 리스트</span>
+            </div>
+            <div class="p-3 border-b border-gray-200 dark:border-gray-800">
+                <input id="interest-search" type="text" placeholder="코인 검색" oninput="renderInterestAllList()" class="w-full px-3 py-2 rounded bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-sm text-gray-900 dark:text-white">
+            </div>
+            <div id="interest-all-list" class="flex-1 overflow-y-auto divide-y divide-gray-200 dark:divide-gray-800 text-sm"></div>
+        </div>
+        <div class="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white p-6 overflow-y-auto gap-6 transition-colors">
+            <div class="bg-white dark:bg-gray-800/60 p-4 rounded-xl border border-red-500/40 shadow">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="font-bold text-red-500 text-base">🔥 1단계 (계속 잘 봐야 하는 종목)</h3>
+                    <span id="stage1-count" class="text-xs bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-300 px-2.5 py-1 rounded-full font-bold">0개</span>
+                </div>
+                <div id="stage1-list" class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm"></div>
+            </div>
+            <div class="bg-white dark:bg-gray-800/60 p-4 rounded-xl border border-blue-500/40 shadow">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="font-bold text-blue-500 text-base">💡 2단계 (괜찮은 종목)</h3>
+                    <span id="stage2-count" class="text-xs bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-300 px-2.5 py-1 rounded-full font-bold">0개</span>
+                </div>
+                <div id="stage2-list" class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const GOOGLE_API_URL = "https://script.google.com/macros/s/AKfycbwZ5a5G79KbWjTPVB-tMTSIbIQSWHrPpdhwy56UaErSrMvJxhWtalGCs4JhO_jZGS1IJw/exec";
+const SHEET_TARGET_CELL = "A5";
+
+let allMarkets = [];
+let tickerData = [];
+let btcChange = 0;
+let currentSort = 'default';
+let currentChartMarket = "KRW-BTC";
+let mainWidgetInterval = "60";
+let interestState = { stage1: [], stage2: [] };
+
+function initTheme() {
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    if (savedTheme === 'dark') {
+        document.documentElement.classList.add('dark');
+        document.getElementById('theme-btn').innerText = '☀️ 라이트모드';
+    } else {
+        document.documentElement.classList.remove('dark');
+        document.getElementById('theme-btn').innerText = '🌙 다크모드';
+    }
+}
+
+function toggleTheme() {
+    if (document.documentElement.classList.contains('dark')) {
+        document.documentElement.classList.remove('dark');
+        localStorage.setItem('theme', 'light');
+        document.getElementById('theme-btn').innerText = '🌙 다크모드';
+    } else {
+        document.documentElement.classList.add('dark');
+        localStorage.setItem('theme', 'dark');
+        document.getElementById('theme-btn').innerText = '☀️ 라이트모드';
+    }
+    loadChart(currentChartMarket);
+    if (modalChart) updateModalChartTheme();
+}
+initTheme();
+
+async function safeFetch(url) {
+    try {
+        const res = await fetch(url);
+        return await res.json();
+    } catch (e) {
+        const backupRes = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
+        return await backupRes.json();
+    }
+}
+
+/* --- 구글 시트 A5 셀 연동 로직 --- */
+function updateSyncStatus(text, colorClass) {
+    const headerBadge = document.getElementById('sheet-sync-status');
+    const modalBadge = document.getElementById('modal-sync-badge');
+    if (headerBadge) {
+        headerBadge.innerText = text;
+        headerBadge.className = `text-[11px] bg-indigo-900/80 border border-indigo-400/50 px-2.5 py-1 rounded-full font-mono ${colorClass}`;
+    }
+    if (modalBadge) {
+        modalBadge.innerText = text;
+        modalBadge.className = `text-xs font-mono ${colorClass}`;
+    }
+}
+
+function fetchInterestFromSheet() {
+    updateSyncStatus("⏳ A5 셀 조회 중...", "text-yellow-300");
+    const oldScript = document.getElementById('gscript-a5-jsonp');
+    if (oldScript) oldScript.remove();
+
+    window.handleA5Data = function(data) {
+        if (data && typeof data === 'object') {
+            interestState = {
+                stage1: Array.isArray(data.stage1) ? data.stage1 : [],
+                stage2: Array.isArray(data.stage2) ? data.stage2 : []
+            };
+            localStorage.setItem('userInterestCoins', JSON.stringify(interestState));
+        }
+        updateSyncStatus("🟢 A5 실시간 동기화 완료", "text-green-400");
+        renderInterestAllList();
+        renderInterestStages();
+    };
+
+    const script = document.createElement('script');
+    script.id = 'gscript-a5-jsonp';
+    script.src = `${GOOGLE_API_URL}?cell=${SHEET_TARGET_CELL}&callback=handleA5Data&_=${Date.now()}`;
+    script.onerror = function() {
+        try {
+            interestState = JSON.parse(localStorage.getItem('userInterestCoins') || '{"stage1":[],"stage2":[]}');
+        } catch(e) {
+            interestState = { stage1: [], stage2: [] };
+        }
+        updateSyncStatus("⚠️ 로컬 캐시 모드", "text-red-400");
+        renderInterestAllList();
+        renderInterestStages();
+    };
+    document.body.appendChild(script);
+}
+
+async function syncInterestToSheet() {
+    updateSyncStatus("⏳ A5 저장 중...", "text-yellow-300");
+    localStorage.setItem('userInterestCoins', JSON.stringify(interestState));
+    try {
+        await fetch(`${GOOGLE_API_URL}?cell=${SHEET_TARGET_CELL}`, {
+            method: "POST",
+            mode: "no-cors",
+            headers: { "Content-Type": "text/plain" },
+            body: JSON.stringify(interestState)
+        });
+        updateSyncStatus("🟢 A5 실시간 저장 완료", "text-green-400");
+    } catch (err) {
+        updateSyncStatus("❌ A5 저장 실패", "text-red-400");
+    }
+}
+
+function getInterestData() {
+    return interestState;
+}
+
+function saveInterestData(data) {
+    interestState = data;
+    syncInterestToSheet();
+}
+
+async function init() {
+    try {
+        const data = await safeFetch("https://api.upbit.com/v1/market/all");
+        allMarkets = data.filter(m => m.market.startsWith("KRW-"));
+        document.getElementById('coin-count').innerText = allMarkets.length;
+        loadData();
+    } catch(e) {
+        document.getElementById('coin-list').innerHTML = "목록 로딩 실패 (새로고침 해주세요)";
+    }
+}
+
+async function loadData() {
+    if (allMarkets.length === 0) return;
+    try {
+        const codes = allMarkets.map(m => m.market).join(',');
+        tickerData = await safeFetch(`https://api.upbit.com/v1/ticker?markets=${codes}`);
+        
+        const btc = tickerData.find(c => c.market === "KRW-BTC");
+        btcChange = btc ? (btc.signed_change_rate * 100) : 0;
+        
+        document.getElementById('btc-rate-header').innerText = btcChange.toFixed(2) + "%";
+        document.getElementById('btc-rate-body').innerText = btcChange.toFixed(2) + "%";
+
+        updateStats();
+        renderCoinList();
+        renderOutperform();
+        document.getElementById('last-update').innerText = new Date().toLocaleTimeString();
+    } catch(e) {
+        console.error("데이터 로딩 실패:", e);
+    }
+}
+
+function renderCoinList() {
+    const searchTerm = document.getElementById('search-input').value.toLowerCase();
+    let list = [...tickerData];
+    
+    if(currentSort === 'name') list.sort((a, b) => {
+        const nameA = allMarkets.find(m => m.market === a.market)?.korean_name || '';
+        const nameB = allMarkets.find(m => m.market === b.market)?.korean_name || '';
+        return nameA.localeCompare(nameB);
+    });
+    if(currentSort === 'rate') list.sort((a, b) => b.signed_change_rate - a.signed_change_rate);
+
+    const container = document.getElementById('coin-list');
+    container.innerHTML = "";
+    
+    list.forEach(t => {
+        const info = allMarkets.find(m => m.market === t.market);
+        if(!info) return;
+        const name = info.korean_name.toLowerCase();
+        const ticker = t.market.split("-")[1].toLowerCase();
+        
+        if (name.includes(searchTerm) || ticker.includes(searchTerm)) {
+            const changeRate = (t.signed_change_rate * 100).toFixed(2);
+            const color = t.signed_change_rate >= 0 ? 'text-red-500' : 'text-blue-500';
+            const div = document.createElement('div');
+            div.className = "p-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 border-b dark:border-gray-800 flex justify-between items-center transition-colors";
+            div.innerHTML = `
+                <div>
+                    <div class="font-bold">${info.korean_name}</div>
+                    <div class="text-[10px] text-gray-500">${t.market.split("-")[1]}</div>
+                </div>
+                <span class="${color} font-bold">${changeRate}%</span>`;
+            div.onclick = () => loadChart(t.market);
+            container.appendChild(div);
+        }
+    });
+}
+
+function changeSort(type) { currentSort = type; renderCoinList(); }
+document.getElementById('search-input').addEventListener('input', renderCoinList);
+
+function updateStats() {
+    const ups = tickerData.filter(t => t.signed_change_rate > 0).length;
+    const downs = tickerData.filter(t => t.signed_change_rate < 0).length;
+    document.getElementById('up-count').innerText = ups;
+    document.getElementById('down-count').innerText = downs;
+}
+
+function renderOutperform() {
+    const container = document.getElementById('outperform-list');
+    container.innerHTML = "";
+    const filtered = tickerData
+        .filter(t => (t.signed_change_rate * 100) > btcChange)
+        .sort((a, b) => b.signed_change_rate - a.signed_change_rate);
+    
+    document.getElementById('outperform-count').innerText = filtered.length;
+    
+    filtered.forEach(t => {
+        const info = allMarkets.find(m => m.market === t.market);
+        if(!info) return;
+        const div = document.createElement('div');
+        div.className = "bg-green-50 dark:bg-green-950/40 p-2 rounded text-green-700 dark:text-green-300 font-bold text-center cursor-pointer hover:bg-green-100 dark:hover:bg-green-900/65 transition-colors";
+        div.innerHTML = `${info.korean_name}<br><span class="text-[10px] opacity-80">${t.market.split("-")[1]}</span><br>${(t.signed_change_rate * 100).toFixed(2)}%`;
+        div.onclick = () => loadChart(t.market);
+        container.appendChild(div);
+    });
+}
+
+async function fetchIndicators() {
+    try {
+        const data = await safeFetch("https://api.upbit.com/v1/ticker?markets=KRW-USDT,KRW-BTC");
+        const rate = data.find(c => c.market === "KRW-USDT").trade_price;
+        const upbitBtc = data.find(c => c.market === "KRW-BTC").trade_price;
+        document.getElementById('top-rate').innerText = rate.toLocaleString() + "원";
+        document.getElementById('top-upbit').innerText = upbitBtc.toLocaleString() + "원";
+        
+        const binanceRes = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT");
+        const binance = await binanceRes.json();
+        const binanceBtc = parseFloat(binance.price);
+        document.getElementById('top-binance').innerText = "$" + binanceBtc.toLocaleString(undefined, {maximumFractionDigits:0});
+        
+        const kimchi = ((upbitBtc - (binanceBtc * rate)) / (binanceBtc * rate) * 100).toFixed(2);
+        document.getElementById('top-kimchi').innerHTML = `<span class="${kimchi >= 0 ? 'text-red-400' : 'text-blue-400'}">${kimchi}%</span>`;
+    } catch(e) {}
+}
+
+function loadChart(s) {
+    currentChartMarket = s;
+    document.getElementById('tradingview_chart').innerHTML = "";
+    const isDark = document.documentElement.classList.contains('dark');
+    
+    let tvSymbol = `UPBIT:${s.split("-")[1]}KRW`;
+    if(s === "KRW-BTC") tvSymbol = "UPBIT:BTCKRW";
+
+    const widget = new TradingView.widget({
+        "width": "100%",
+        "height": "500",
+        "symbol": tvSymbol,
+        "interval": mainWidgetInterval,
+        "container_id": "tradingview_chart",
+        "theme": isDark ? "dark" : "light",
+        "onready": function() {
+            widget.chart().onIntervalChanged().subscribe(null, function(interval) {
+                mainWidgetInterval = interval;
+            });
+        }
+    });
+}
+
+/* --- BTC 합성 차트 모달 --- */
+let modalChart, modalCandleSeries, modalVolumeSeries;
+let modalCoins = [], modalCurrentData = [];
+let modalCurrentMarket = 'KRW-BTC', modalCurrentName = '비트코인';
+let modalCurrentTimeframe = 'minutes/60';
+let modalActiveIndicators = []; 
+
+const defaultIndicators = [{ period: 20, color: '#ffaa00' }, { period: 60, color: '#00aa00' }];
+
+function getSavedIndicators() {
+    const saved = localStorage.getItem('userIndicators');
+    if (saved) { try { return JSON.parse(saved); } catch (e) { return defaultIndicators; } }
+    return defaultIndicators;
+}
+
+function updateModalChartTheme() {
+    if (!modalChart) return;
+    const isDark = document.documentElement.classList.contains('dark');
+    modalChart.applyOptions({
+        layout: {
+            background: { type: 'solid', color: isDark ? '#111827' : '#ffffff' },
+            textColor: isDark ? '#9ca3af' : '#4b5563',
+        },
+        grid: {
+            vertLines: { color: isDark ? '#1f2937' : '#f3f4f6' },
+            horzLines: { color: isDark ? '#1f2937' : '#f3f4f6' },
+        }
+    });
+}
+
+function initModalChart() {
+    if (modalChart) {
+        updateModalChartTheme();
+        return;
+    }
+    const container = document.getElementById('modal-chart-container');
+    const isDark = document.documentElement.classList.contains('dark');
+    
+    modalChart = LightweightCharts.createChart(container, {
+        layout: { background: { type: 'solid', color: isDark ? '#111827' : '#ffffff' }, textColor: isDark ? '#9ca3af' : '#4b5563' },
+        grid: { vertLines: { color: isDark ? '#1f2937' : '#f3f4f6' }, horzLines: { color: isDark ? '#1f2937' : '#f3f4f6' } },
+        timeScale: { timeVisible: true, secondsVisible: false }
+    });
+    modalCandleSeries = modalChart.addCandlestickSeries();
+    modalVolumeSeries = modalChart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: 'volume' });
+    modalChart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+    renderIndicatorUI();
+}
+
+function openBtcSyntheticModal() {
+    document.getElementById('synthetic-modal').classList.remove('hidden');
+    initModalChart();
+    
+    setTimeout(() => {
+        if (modalChart) {
+            const container = document.getElementById('modal-chart-container');
+            modalChart.resize(container.clientWidth, container.clientHeight);
+            modalChart.timeScale().fitContent();
+        }
+    }, 50);
+
+    loadModalCoins();
+}
+
+function closeBtcSyntheticModal() { document.getElementById('synthetic-modal').classList.add('hidden'); }
+
+async function loadModalCoins() {
+    try {
+        modalCoins = allMarkets;
+        document.getElementById('modal-coin-count').innerText = modalCoins.length;
+        renderModalList(modalCoins);
+        
+        updateTimeframeUI();
+        if (modalCoins.length > 0) {
+            const target = modalCoins.find(c => c.market === modalCurrentMarket) || modalCoins[0];
+            await selectModalCoin(target.market, target.korean_name);
+        }
+    } catch (e) {}
+}
+
+function renderModalList(list) {
+    const container = document.getElementById('modal-coin-list');
+    container.innerHTML = list.map(c => {
+        const isSelected = c.market === modalCurrentMarket;
+        const bgClass = isSelected ? 'bg-indigo-100 dark:bg-indigo-950/80 border-l-4 border-indigo-500 font-bold' : 'hover:bg-gray-100 dark:hover:bg-gray-800';
+        return `
+            <div onclick="selectModalCoin('${c.market}', '${c.korean_name}')" class="p-3 cursor-pointer transition ${bgClass}" data-market="${c.market}">
+                <div class="text-sm">${c.korean_name}</div>
+                <div class="text-xs opacity-70">${c.market}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+function filterModalList() {
+    const query = document.getElementById('modal-search').value.toLowerCase();
+    const filtered = modalCoins.filter(c => c.korean_name.toLowerCase().includes(query) || c.market.toLowerCase().includes(query));
+    document.getElementById('modal-coin-count').innerText = filtered.length;
+    renderModalList(filtered);
+}
+
+async function selectModalCoin(market, name) {
+    modalCurrentMarket = market;
+    modalCurrentName = name;
+    
+    const isDark = document.documentElement.classList.contains('dark');
+    document.querySelectorAll('#modal-coin-list > div').forEach(el => {
+        if(el.getAttribute('data-market') === market) {
+            el.className = `p-3 cursor-pointer transition ${isDark ? 'bg-indigo-950/80' : 'bg-indigo-100'} border-l-4 border-indigo-500 font-bold`;
+        } else {
+            el.className = `p-3 cursor-pointer transition ${isDark ? 'hover:bg-gray-800' : 'hover:bg-gray-100'}`;
+        }
+    });
+
+    await fetchModalChartData();
+}
+
+function updateTimeframeUI() {
+    const isDark = document.documentElement.classList.contains('dark');
+    document.querySelectorAll('.modal-tf-btn').forEach(b => {
+        if(b.getAttribute('data-type') === modalCurrentTimeframe) {
+            b.className = "modal-tf-btn px-3 py-1 rounded text-xs font-bold bg-blue-600 text-white shadow ring-2 ring-blue-400";
+        } else {
+            b.className = isDark 
+                ? "modal-tf-btn px-3 py-1 rounded text-xs font-bold bg-gray-800 text-gray-300 hover:bg-gray-700 transition"
+                : "modal-tf-btn px-3 py-1 rounded text-xs font-bold bg-gray-200 text-gray-700 hover:bg-gray-300 transition";
+        }
+    });
+}
+
+async function changeTimeframe(tf, btn) {
+    modalCurrentTimeframe = tf; 
+    updateTimeframeUI();
+
+    if (!modalCurrentMarket) return;
+    await fetchModalChartData();
+}
+
+async function fetchModalChartData() {
+    try {
+        const tfNameMap = { 'minutes/1': '1분봉', 'minutes/5': '5분봉', 'minutes/30': '30분봉', 'minutes/60': '1시간봉', 'days': '일봉', 'weeks': '주봉' };
+        const currentTfText = tfNameMap[modalCurrentTimeframe] || modalCurrentTimeframe;
+
+        document.getElementById('modal-chart-title').innerText = `${modalCurrentName} / BTC [${currentTfText}] 로딩중...`;
+
+        const [altData, btcData] = await Promise.all([
+            safeFetch(`https://api.upbit.com/v1/candles/${modalCurrentTimeframe}?market=${modalCurrentMarket}&count=200`),
+            safeFetch(`https://api.upbit.com/v1/candles/${modalCurrentTimeframe}?market=KRW-BTC&count=200`)
+        ]);
+
+        if (!Array.isArray(altData) || !Array.isArray(btcData) || altData.length === 0 || btcData.length === 0) {
+            throw new Error("데이터 없음");
+        }
+
+        const btcMap = new Map();
+        btcData.forEach(b => btcMap.set(b.candle_date_time_kst || b.candle_date_time_utc, b));
+        
+        modalCurrentData = altData.reverse().map(a => {
+            const timeKey = a.candle_date_time_kst || a.candle_date_time_utc;
+            const btc = btcMap.get(timeKey);
+            if (!btc) return null;
+            
+            let timeValue;
+            if (modalCurrentTimeframe.startsWith('minutes')) {
+                timeValue = Math.floor(new Date(timeKey.replace('T', ' ')).getTime() / 1000);
+            } else {
+                timeValue = timeKey.split('T')[0];
+            }
+
+            if (modalCurrentMarket === 'KRW-BTC') {
+                return {
+                    time: timeValue,
+                    open: 1, high: 1, low: 1, close: 1,
+                    volume: a.candle_acc_trade_volume
+                };
+            }
+
+            return {
+                time: timeValue,
+                open: a.opening_price / btc.opening_price,
+                high: a.high_price / btc.low_price,
+                low: a.low_price / btc.high_price,
+                close: a.trade_price / btc.trade_price,
+                volume: a.candle_acc_trade_volume
+            };
+        }).filter(d => d);
+
+        if (modalCurrentData.length === 0) {
+            throw new Error("정합성 데이터 없음");
+        }
+
+        modalCandleSeries.setData(modalCurrentData);
+        modalVolumeSeries.setData(modalCurrentData.map(d => ({ time: d.time, value: d.volume, color: d.close >= d.open ? '#ef4444' : '#3b82f6' })));
+        
+        if (modalChart) {
+            const container = document.getElementById('modal-chart-container');
+            modalChart.resize(container.clientWidth, container.clientHeight);
+            modalChart.timeScale().fitContent();
+        }
+
+        document.getElementById('modal-chart-title').innerText = `${modalCurrentName} / BTC [${currentTfText}] (${modalCurrentData.length} 캔들)`;
+        updateAllIndicatorsData();
+    } catch (e) { 
+        document.getElementById('modal-chart-title').innerText = "로딩 실패 (다시 시도해주세요)"; 
+    }
+}
+
+function renderIndicatorUI() {
+    const indicators = getSavedIndicators();
+    const container = document.getElementById('modal-indicator-list');
+    if (!container) return;
+    container.innerHTML = '';
+    if (modalActiveIndicators.length > 0) {
+        modalActiveIndicators.forEach(ind => modalChart.removeSeries(ind.series));
+        modalActiveIndicators = [];
+    }
+    const isDark = document.documentElement.classList.contains('dark');
+    indicators.forEach((item, index) => {
+        const series = modalChart.addLineSeries({ color: item.color, lineWidth: 2 });
+        modalActiveIndicators.push({ series, period: item.period, color: item.color });
+        const wrapper = document.createElement('div');
+        wrapper.className = isDark 
+            ? 'flex items-center gap-1.5 bg-gray-900 px-2 py-1 rounded border border-gray-700 text-white'
+            : 'flex items-center gap-1.5 bg-white px-2 py-1 rounded border border-gray-300 text-gray-900 shadow-sm';
+        wrapper.innerHTML = `
+            <span class="font-semibold text-xs">MA</span>
+            <input type="number" value="${item.period}" onchange="updateIndicator(${index}, 'period', this.value)" class="w-10 ${isDark ? 'bg-gray-800 border-gray-700 text-white' : 'bg-gray-100 border-gray-300 text-gray-900'} text-center rounded border text-xs py-0.5">
+            <input type="color" value="${item.color}" onchange="updateIndicator(${index}, 'color', this.value)" class="w-6 h-6 bg-transparent border-0 cursor-pointer rounded overflow-hidden">
+            <button onclick="removeIndicator(${index})" class="text-red-500 hover:text-red-400 ml-1 font-bold px-1">×</button>
+        `;
+        container.appendChild(wrapper);
+    });
+    if (modalCurrentData.length > 0) updateAllIndicatorsData();
+}
+
+function updateIndicator(index, field, value) {
+    const indicators = getSavedIndicators();
+    if (field === 'period') indicators[index].period = parseInt(value) || 1;
+    else indicators[index].color = value;
+    localStorage.setItem('userIndicators', JSON.stringify(indicators));
+    renderIndicatorUI();
+}
+
+function addIndicatorRow() {
+    const indicators = getSavedIndicators();
+    indicators.push({ period: 120, color: '#00ffff' });
+    localStorage.setItem('userIndicators', JSON.stringify(indicators));
+    renderIndicatorUI();
+}
+
+function removeIndicator(index) {
+    const indicators = getSavedIndicators();
+    indicators.splice(index, 1);
+    localStorage.setItem('userIndicators', JSON.stringify(indicators));
+    renderIndicatorUI();
+}
+
+function updateAllIndicatorsData() {
+    modalActiveIndicators.forEach(ind => {
+        ind.series.applyOptions({ color: ind.color });
+        const maData = [];
+        for (let i = 0; i < modalCurrentData.length; i++) {
+            if (i >= ind.period - 1) {
+                const sum = modalCurrentData.slice(i - ind.period + 1, i + 1).reduce((acc, curr) => acc + curr.close, 0);
+                maData.push({ time: modalCurrentData[i].time, value: sum / ind.period });
+            }
+        }
+        ind.series.setData(maData);
+    });
+}
+
+/* --- 관심종목 모달 열기/닫기 및 조작 --- */
+function openInterestModal() {
+    document.getElementById('interest-modal').classList.remove('hidden');
+    fetchInterestFromSheet();
+}
+
+function closeInterestModal() {
+    document.getElementById('interest-modal').classList.add('hidden');
+}
+
+function renderInterestAllList() {
+    const query = document.getElementById('interest-search').value.toLowerCase();
+    const container = document.getElementById('interest-all-list');
+    const interest = getInterestData();
+    
+    const filtered = allMarkets.filter(c => c.korean_name.toLowerCase().includes(query) || c.market.toLowerCase().includes(query));
+    
+    container.innerHTML = filtered.map(c => {
+        const in1 = interest.stage1.includes(c.market);
+        const in2 = interest.stage2.includes(c.market);
+        
+        return `
+            <div class="p-2.5 flex justify-between items-center hover:bg-gray-100 dark:hover:bg-gray-800 transition">
+                <div>
+                    <div class="font-bold text-sm">${c.korean_name}</div>
+                    <div class="text-[10px] opacity-70">${c.market}</div>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <button onclick="toggleInterest('${c.market}', 1)" class="px-2 py-1 rounded text-xs font-bold transition ${in1 ? 'bg-red-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}">
+                        1단계${in1 ? ' ✓' : ''}
+                    </button>
+                    <button onclick="toggleInterest('${c.market}', 2)" class="px-2 py-1 rounded text-xs font-bold transition ${in2 ? 'bg-blue-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}">
+                        2단계${in2 ? ' ✓' : ''}
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function toggleInterest(market, stage) {
+    let interest = getInterestData();
+    if (stage === 1) {
+        if (interest.stage1.includes(market)) {
+            interest.stage1 = interest.stage1.filter(m => m !== market);
+        } else {
+            interest.stage1.push(market);
+            interest.stage2 = interest.stage2.filter(m => m !== market);
+        }
+    } else {
+        if (interest.stage2.includes(market)) {
+            interest.stage2 = interest.stage2.filter(m => m !== market);
+        } else {
+            interest.stage2.push(market);
+            interest.stage1 = interest.stage1.filter(m => m !== market);
+        }
+    }
+    saveInterestData(interest);
+    renderInterestAllList();
+    renderInterestStages();
+}
+
+function renderInterestStages() {
+    const interest = getInterestData();
+    
+    // 1단계 렌더링
+    const s1Container = document.getElementById('stage1-list');
+    document.getElementById('stage1-count').innerText = `${interest.stage1.length}개`;
+    if (interest.stage1.length === 0) {
+        s1Container.innerHTML = `<div class="col-span-full text-xs text-gray-400 py-3 text-center">1단계에 등록된 코인이 없습니다.</div>`;
+    } else {
+        s1Container.innerHTML = interest.stage1.map(market => {
+            const info = allMarkets.find(m => m.market === market);
+            const ticker = tickerData.find(t => t.market === market);
+            const name = info ? info.korean_name : market;
+            const rate = ticker ? (ticker.signed_change_rate * 100).toFixed(2) : '0.00';
+            const color = ticker && ticker.signed_change_rate >= 0 ? 'text-red-500' : 'text-blue-500';
+            
+            return `
+                <div class="bg-red-50 dark:bg-red-950/30 p-2.5 rounded border border-red-200 dark:border-red-900/50 flex flex-col justify-between">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="font-bold text-xs">${name}</div>
+                            <div class="text-[10px] opacity-70">${market}</div>
+                        </div>
+                        <button onclick="toggleInterest('${market}', 1)" class="text-gray-400 hover:text-red-500 text-xs font-bold">✕</button>
+                    </div>
+                    <div class="mt-2 flex justify-between items-center text-xs">
+                        <span class="${color} font-bold">${rate}%</span>
+                        <button onclick="closeInterestModal(); openBtcSyntheticModal(); selectModalCoin('${market}', '${name}');" class="bg-red-600 hover:bg-red-500 text-white px-2 py-0.5 rounded text-[10px]">차트보기</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // 2단계 렌더링
+    const s2Container = document.getElementById('stage2-list');
+    document.getElementById('stage2-count').innerText = `${interest.stage2.length}개`;
+    if (interest.stage2.length === 0) {
+        s2Container.innerHTML = `<div class="col-span-full text-xs text-gray-400 py-3 text-center">2단계에 등록된 코인이 없습니다.</div>`;
+    } else {
+        s2Container.innerHTML = interest.stage2.map(market => {
+            const info = allMarkets.find(m => m.market === market);
+            const ticker = tickerData.find(t => t.market === market);
+            const name = info ? info.korean_name : market;
+            const rate = ticker ? (ticker.signed_change_rate * 100).toFixed(2) : '0.00';
+            const color = ticker && ticker.signed_change_rate >= 0 ? 'text-red-500' : 'text-blue-500';
+            
+            return `
+                <div class="bg-blue-50 dark:bg-blue-950/30 p-2.5 rounded border border-blue-200 dark:border-blue-900/50 flex flex-col justify-between">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <div class="font-bold text-xs">${name}</div>
+                            <div class="text-[10px] opacity-70">${market}</div>
+                        </div>
+                        <button onclick="toggleInterest('${market}', 2)" class="text-gray-400 hover:text-blue-500 text-xs font-bold">✕</button>
+                    </div>
+                    <div class="mt-2 flex justify-between items-center text-xs">
+                        <span class="${color} font-bold">${rate}%</span>
+                        <button onclick="closeInterestModal(); openBtcSyntheticModal(); selectModalCoin('${market}', '${name}');" class="bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded text-[10px]">차트보기</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+}
+
+init();
+fetchIndicators();
+fetchInterestFromSheet(); // 시작할 때 구글 시트 A5 셀 데이터 가져오기
+setInterval(loadData, 15000); 
+setInterval(fetchIndicators, 15000); 
+loadChart("KRW-BTC");
+</script>
+</body>
+</html>
